@@ -4,5 +4,6 @@
            clj-http/clj-http      {:mvn/version "3.12.3"}
            org.clojure/data.json  {:mvn/version "2.4.0"}
            http-kit/http-kit      {:mvn/version "2.6.0-alpha1"}
-           org.clojure/core.async {:mvn/version "1.5.640"}}
+           org.clojure/core.async {:mvn/version "1.5.640"}
+           camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.2"}}
  :aliases {:nREPL {:extra-deps {nrepl/nrepl {:mvn/version "0.6.0"}}}}}
