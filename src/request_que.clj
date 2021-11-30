@@ -1,4 +1,4 @@
-(ns rest-test
+(ns request-que
   (:require
    [taoensso.timbre        :as timbre]
    [clj-http.client        :as http]
@@ -6,6 +6,8 @@
    [clojure.edn            :as edn]
    [clojure.data.json      :as json]
    [camel-snake-kebab.core :as csk]))
+
+(timbre/set-level! :info)
 
 ;; ** Helper Functions
 
@@ -31,9 +33,9 @@
   (partial remove-vals empty-or-nil?))
 
 (defn parse-amount
-  "Converts to a floating point number rounded to the nearest 100th"
+  "Converts to a Double rounded to the nearest 100th"
   [n]
-  (java.lang.Float/parseFloat (format "%.2f" n)))
+  (java.lang.Double/parseDouble (format "%.2f" n)))
 
 (defn make-url
   "Returns a url for 'n'.json"
@@ -48,7 +50,7 @@
     (timbre/info "Sending Request To: " url)
     (try
       (http/get url)
-      (catch Exception e (timbre/error "Bad Request" e)))))
+      (catch Exception e (timbre/debug "Bad Request" e)))))
 
 (defn get-tally
   "Makes a 'get' request to the Bench API for a specific page of tallies. 
@@ -64,17 +66,19 @@
   "Sorts tansactions by date & sums the transaction costs. 
    Returns a map of {date transaction-total}"
   [state]
-  (let [transactions     (->>
-                          (remove-empty-or-nil-values state)
-                          (map (fn [[_ v]]
-                                 (:transactions v)))
-                          (flatten)
-                          (group-by #(:date %)))]
-    (into {} (map (fn [[k v]]
-                    (let [sum (reduce (fn [acc m]
-                                        (let [amount (edn/read-string (:amount m))]
-                                          (+ acc amount))) 0 v)]
-                      {k (parse-amount sum)})) transactions))))
+  (let [transactions (->>
+                      (remove-empty-or-nil-values state) ;; Remove empty or nil values
+                      (map (fn [[_ v]]
+                             (:transactions v)))         ;; Grab the transactions
+                      (flatten)                          ;; Create a flat collection
+                      (group-by #(:date %))) ;; Group transactions by date
+        tally        (into {} (map (fn [[k v]]
+                                     (let [sum (reduce (fn [acc m]
+                                                         (let [amount (edn/read-string (:amount m))]
+                                                           (+ acc amount))) 0 v)]
+                                       {k (parse-amount sum)})) transactions))] ;; return a map of {date tally-sum}
+    (timbre/info "Totals: " tally)
+    tally))
 
 ;; -------------------------------------------------------------------------------------- ;;
 
@@ -103,16 +107,12 @@
     (a/go (while true
             (let [response (a/<! req-chan)]
               (swap! *state assoc (:page response) response))))
-    (loop [page 1]
-      (let [request (get-tally page)]
+    (loop [page 1]                     ;; start at page 1
+      (let [request (get-tally page)]  ;; make a request
         (if request
-          (do (a/>!! req-chan request)
+          (do (a/>!! req-chan request) ;; on success, recur & increment the page number for the next request. Puts the pending request on the request channel
               (recur (inc page)))
-          (do (make-tally @*state)
+          (do (make-tally @*state) ;; on failure, tally the current in-memory store of tally responses & close the request que.
               (a/close! req-chan)))))))
 
-
-
-(comment
-  (make-tally @*state)
-  (request-worker))
+(request-worker)
